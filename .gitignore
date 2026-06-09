@@ -1,0 +1,22 @@
+# --- WAKA PROTECT : Fichiers Système & Python ---
+
+# Byte-compiled / optimisés (Numba & Python)
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+
+# Environnements virtuels (La mécanique interne)
+venv/
+env/
+.env
+
+# Fichiers de l'OS (Les traces de pas de l'utilisateur)
+.DS_Store
+Thumbs.db
+
+# Fichiers de log (Les cris du moteur en cas d'erreur)
+*.log
+
+# Dossiers de build (Si tu compiles avec Numba)
+.numba/
