@@ -1,4 +1,4 @@
-# [nom-projet] : Silicon-Ghost
+# Rig : Silicon-Ghost
 
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Architecture](https://img.shields.io/badge/Architecture-Möbius-red)
