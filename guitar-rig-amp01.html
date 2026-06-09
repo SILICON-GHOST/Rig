@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Ultimate Guitar Rig – Fixed</title>
+<style>
+  body {font-family:Arial,sans-serif; background:#111; color:#eee; margin:2rem; line-height:1.5;}
+  h1 {color:#ffdd55;}
+  .panel {margin-top:1.5rem; padding:1rem; background:#222; border-radius:8px;}
+  .row {display:flex; align-items:center; margin:0.5rem 0;}
+  .row label {flex:0 0 130px;}
+  .row input[type=range] {flex:1;}
+  .row span {flex:0 0 45px; text-align:right;}
+  button, select, input[type=range] {font-size:1rem;}
+  #dropzone {border:2px dashed #555; padding:2rem; text-align:center; cursor:pointer;}
+  audio, a {margin-top:1rem; display:block;}
+  #runBtn {background: #ffdd55; color: #000; padding: 10px 20px; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; margin-top: 20px;}
+  #runBtn:disabled {background: #555; cursor: not-allowed;}
+  .status {padding:1rem; margin-top:1rem; background:#1a1a1a; border-left:4px solid #ffdd55;}
+</style>
+</head>
+<body>
+
+<h1>Ultimate Guitar Rig – HTML + JS</h1>
+
+<div id="dropzone">
+  <p>Glissez‑déposez un <code style="color:#ffdd55">.wav</code> ou cliquez pour choisir.</p>
+  <input type="file" id="fileInput" accept=".wav" style="display:none;">
+</div>
+<button id="genTestBtn">Générer un accord test (E‑A‑D)</button>
+
+<div class="panel">
+  <h2>🦾 Pédalier</h2>
+  <div class="row">
+    <label for="pedalSelect">Type</label>
+    <select id="pedalSelect">
+      <option value="distortion">Distorsion (classic)</option>
+      <option value="metal">Metal (high‑gain)</option>
+      <option value="reverb">Reverb‑only (Clean)</option>
+    </select>
+  </div>
+
+  <div class="row"><label for="gainSlider">Gain</label>
+    <input type="range" id="gainSlider" min="0.2" max="2.0" step="0.05" value="0.8">
+    <span id="gainVal">0.80</span></div>
+
+  <div class="row"><label for="bassSlider">Bass</label>
+    <input type="range" id="bassSlider" min="0" max="2" step="0.05" value="0.8">
+    <span id="bassVal">0.80</span></div>
+
+  <div class="row"><label for="midSlider">Mids</label>
+    <input type="range" id="midSlider" min="0" max="2" step="0.05" value="0.6">
+    <span id="midVal">0.60</span></div>
+
+  <div class="row"><label for="trebleSlider">Treble</label>
+    <input type="range" id="trebleSlider" min="0" max="2" step="0.05" value="1.0">
+    <span id="trebleVal">1.00</span></div>
+
+  <h2>🌀 Tremolo (Twin)</h2>
+  <div class="row"><label for="tremSpeed">Vitesse (Hz)</label>
+    <input type="range" id="tremSpeed" min="0.1" max="10" step="0.1" value="6">
+    <span id="tremSpeedVal">6.0</span></div>
+  <div class="row"><label for="tremDepth">Profondeur</label>
+    <input type="range" id="tremDepth" min="0" max="1" step="0.05" value="0.5">
+    <span id="tremDepthVal">0.50</span></div>
+
+  <h2>🔊 Cabinet</h2>
+  <div class="row"><label for="cabThump">Thump (100 Hz boost)</label>
+    <input type="range" id="cabThump" min="0" max="1" step="0.05" value="0.4">
+    <span id="cabThumpVal">0.40</span></div>
+
+  <h2>⚡ Canal</h2>
+  <button id="chanToggleBtn">Switch to LEAD</button>
+  <span id="chanState">CLEAN</span>
+
+  <h2>🔈 Boost (pré‑ampli)</h2>
+  <button id="boostBtn">Boost +6 dB</button>
+  <span id="boostState">off</span>
+</div>
+
+<button id="runBtn" disabled>▶️ Appliquer le rig</button>
+<div id="output"></div>
+<div id="status"></div>
+
+<script>
+/* ==========================================================
+   0️⃣  UTILITAIRES
+   ========================================================== */
+function dBToGain(db) { return Math.pow(10, db/20); }
+
+function log(msg) {
+  console.log(msg);
+  const status = document.getElementById('status');
+  status.innerHTML += '<p>' + msg + '</p>';
+  status.scrollTop = status.scrollHeight;
+}
+
+/* 1️⃣ UI Updates */
+document.querySelectorAll('input[type=range]').forEach(r => {
+  const id = r.id.replace('Slider','Val').replace('Speed','SpeedVal').replace('Depth','DepthVal').replace('Thump','ThumpVal');
+  r.addEventListener('input', e => {
+    const target = document.getElementById(id);
+    if(target) target.textContent = Number(e.target.value).toFixed(2);
+  });
+});
+
+/* 2️⃣ File Loading */
+let audioBuffer = null;
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.style.borderColor = "#0f0"; });
+dropzone.addEventListener('dragleave', e => { e.preventDefault(); dropzone.style.borderColor = "#555"; });
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file) loadWav(file);
+});
+fileInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) loadWav(file);
+});
+
+function loadWav(file) {
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      audioBuffer = await ctx.decodeAudioData(ev.target.result);
+      document.getElementById('runBtn').disabled = false;
+      log("✅ Fichier chargé : " + file.name);
+    } catch(e) {
+      log("❌ Erreur chargement : " + e.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* 3️⃣ Test Tone */
+document.getElementById('genTestBtn').addEventListener('click', async () => {
+  try {
+    const sr = 44100, dur = 3;
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const t = new Float32Array(sr*dur);
+    for(let i=0;i<t.length;i++) t[i]=i/sr;
+    const e = t.map(v=>Math.sin(2*Math.PI*82.41*v));
+    const a = t.map(v=>Math.sin(2*Math.PI*110*v));
+    const d = t.map(v=>Math.sin(2*Math.PI*146.83*v));
+    const mix = new Float32Array(t.length);
+    for(let i=0;i<t.length;i++) mix[i]=(e[i]+a[i]+d[i])/3;
+    audioBuffer = ctx.createBuffer(1, mix.length, sr);
+    audioBuffer.copyToChannel(mix, 0);
+    document.getElementById('runBtn').disabled = false;
+    log("✅ Accord test généré (E-A-D)");
+  } catch(e) {
+    log("❌ Erreur génération : " + e.message);
+  }
+});
+
+/* 4️⃣ Controls State */
+let chan = 'CLEAN';
+document.getElementById('chanToggleBtn').addEventListener('click', () => {
+  chan = (chan==='CLEAN') ? 'LEAD' : 'CLEAN';
+  document.getElementById('chanState').textContent = chan;
+});
+
+let boostOn = false;
+document.getElementById('boostBtn').addEventListener('click', () => {
+  boostOn = !boostOn;
+  document.getElementById('boostState').textContent = boostOn ? 'on' : 'off';
+});
+
+/* 6️⃣ Distortion Curve */
+function makeDistortionCurve(type, gain) {
+  const n = 44100;
+  const curve = new Float32Array(n);
+  for(let i=0;i<n;i++) {
+    const x = (i*2)/n - 1;
+    if (type === 'distortion') {
+      curve[i] = Math.tanh(gain * x);
+    } else if (type === 'metal') {
+      curve[i] = Math.tanh(gain * x * 3);
+    } else {
+      curve[i] = x;
+    }
+  }
+  return curve;
+}
+
+/* 7️⃣ MAIN PROCESSING ENGINE */
+document.getElementById('runBtn').addEventListener('click', async () => {
+  if (!audioBuffer) {
+    log("❌ Aucun audio chargé !");
+    return;
+  }
+
+  try {
+    log("⏳ Traitement en cours...");
+    document.getElementById('runBtn').disabled = true;
+
+    const OfflineContext = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OfflineContext) {
+      log("❌ OfflineAudioContext non supporté");
+      document.getElementById('runBtn').disabled = false;
+      return;
+    }
+
+    const ctx = new OfflineContext(
+      audioBuffer.numberOfChannels,
+      audioBuffer.length,
+      audioBuffer.sampleRate
+    );
+
+    const source = ctx.createBufferSource();
+    source.buffer = audioBuffer;
+
+    // 1. Pre-Amp Boost
+    const boostGain = ctx.createGain();
+    boostGain.gain.value = boostOn ? dBToGain(6) : 1;
+
+    // 2. Pedal (Distortion)
+    const pedal = ctx.createWaveShaper();
+    const pType = document.getElementById('pedalSelect').value;
+    const pGain = parseFloat(document.getElementById('gainSlider').value);
+    pedal.curve = makeDistortionCurve(pType, pGain);
+    pedal.oversample = '4x';
+
+    // 3. Channel Pre-Amp (Lead vs Clean)
+    const chanAmp = ctx.createGain();
+    chanAmp.gain.value = (chan === 'LEAD') ? 2.5 : 1.0;
+
+    // 4. Tremolo (THE FIX - Correct LFO modulation)
+    const tremGain = ctx.createGain();
+    const tremLfo = ctx.createOscillator();
+    const tremDepthNode = ctx.createGain();
+    
+    tremLfo.frequency.value = parseFloat(document.getElementById('tremSpeed').value);
+    const depth = parseFloat(document.getElementById('tremDepth').value);
+    tremDepthNode.gain.value = depth;
+    
+    // CORRECTION: LFO output va de -1 à +1, on le décale vers 1-depth à 1
+    const tremOffset = ctx.createGain();
+    tremOffset.gain.value = 1 - depth; // offset de base
+    
+    tremLfo.connect(tremDepthNode);
+    tremDepthNode.connect(tremGain.gain);
+    tremOffset.connect(tremGain.gain);
+    
+    tremGain.gain.setValueAtTime(1, ctx.currentTime);
+    tremLfo.start(ctx.currentTime);
+
+    // 5. EQ (Bass, Mid, Treble)
+    const lowShelf = ctx.createBiquadFilter();
+    lowShelf.type = 'lowshelf';
+    lowShelf.frequency.value = 200;
+    lowShelf.gain.value = (parseFloat(document.getElementById('bassSlider').value)-1)*15;
+
+    const midPeak = ctx.createBiquadFilter();
+    midPeak.type = 'peaking';
+    midPeak.frequency.value = 1000;
+    midPeak.Q.value = 1;
+    midPeak.gain.value = (parseFloat(document.getElementById('midSlider').value)-1)*15;
+
+    const highShelf = ctx.createBiquadFilter();
+    highShelf.type = 'highshelf';
+    highShelf.frequency.value = 3500;
+    highShelf.gain.value = (parseFloat(document.getElementById('trebleSlider').value)-1)*15;
+
+    // 6. Cabinet Emulation
+    const cabThump = ctx.createBiquadFilter();
+    cabThump.type = 'peaking';
+    cabThump.frequency.value = 100;
+    cabThump.gain.value = parseFloat(document.getElementById('cabThump').value)*12;
+
+    const cabLowPass = ctx.createBiquadFilter();
+    cabLowPass.type = 'lowpass';
+    cabLowPass.frequency.value = 5000;
+
+    // 7. Final Limiter (to prevent clipping)
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -1;
+    limiter.ratio.value = 20;
+
+    // --- CONNECTION CHAIN ---
+    source.connect(boostGain);
+    boostGain.connect(pedal);
+    pedal.connect(chanAmp);
+    chanAmp.connect(tremGain);
+    tremGain.connect(lowShelf);
+    lowShelf.connect(midPeak);
+    midPeak.connect(highShelf);
+    highShelf.connect(cabThump);
+    cabThump.connect(cabLowPass);
+    cabLowPass.connect(limiter);
+    limiter.connect(ctx.destination);
+
+    source.start(0);
+    const rendered = await ctx.startRendering();
+
+    log("✅ Rendu terminé !");
+
+    // Export
+    const wavBlob = bufferToWav(rendered);
+    const url = URL.createObjectURL(wavBlob);
+    const outDiv = document.getElementById('output');
+    outDiv.innerHTML = `
+      <h2>✅ Résultat</h2>
+      <audio controls src="${url}"></audio><br>
+      <a href="${url}" download="guitar_rig_output.wav">💾 Télécharger le WAV</a>
+    `;
+    document.getElementById('runBtn').disabled = false;
+  } catch(e) {
+    log("❌ Erreur : " + e.message);
+    document.getElementById('runBtn').disabled = false;
+  }
+});
+
+/* 8️⃣ WAV EXPORTER (Robust) */
+function bufferToWav(abuffer) {
+  const numOfChan = abuffer.numberOfChannels;
+  const length = abuffer.length * numOfChan * 2 + 44;
+  const buffer = new ArrayBuffer(length);
+  const view = new DataView(buffer);
+  let pos = 0;
+
+  const writeString = (s) => { for(let i=0;i<s.length;i++) view.setUint8(pos++, s.charCodeAt(i)); };
+
+  writeString('RIFF');
+  view.setUint32(pos, length - 8, true); pos += 4;
+  writeString('WAVE');
+  writeString('fmt ');
+  view.setUint32(pos, 16, true); pos += 4;
+  view.setUint16(pos, 1, true); pos += 2;
+  view.setUint16(pos, numOfChan, true); pos += 2;
+  view.setUint32(pos, abuffer.sampleRate, true); pos += 4;
+  view.setUint32(pos, abuffer.sampleRate * numOfChan * 2, true); pos += 4;
+  view.setUint16(pos, numOfChan * 2, true); pos += 2;
+  view.setUint16(pos, 16, true); pos += 2;
+  writeString('data');
+  view.setUint32(pos, length - pos - 4, true); pos += 4;
+
+  for (let i = 0; i < abuffer.length; i++) {
+    for (let channel = 0; channel < numOfChan; channel++) {
+      let sample = abuffer.getChannelData(channel)[i];
+      sample = Math.max(-1, Math.min(1, sample));
+      view.setInt16(pos, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+      pos += 2;
+    }
+  }
+  return new Blob([buffer], {type: "audio/wav"});
+}
+</script>
+</body>
+</html>
